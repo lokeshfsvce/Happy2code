@@ -1,0 +1,137 @@
+import sys
+import base64
+import urllib2
+import urllib
+import csv
+from macpath import split
+from datetime import datetime
+sys.path.append('/Office/TableauSDK/')
+from tableausdk import *
+from tableausdk.Extract import *
+from tableausdk.Server import *
+import teradata
+
+#readFile = open('testfile.txt','w-');
+#readFile.write("1");
+
+#dt1 = sys.argv[1];
+#dt2 = sys.argv[2];
+dt1='2016-11-21';
+dt2='2016-11-25';
+
+#readFile.write("2");
+# Define the table's schema
+def makeTableDefinition():
+    tableDef = TableDefinition()
+    tableDef.setDefaultCollation(Collation.EN_GB)
+    tableDef.addColumn('date', Type.DATE)
+    tableDef.addColumn('weekday',Type.CHAR_STRING)
+    tableDef.addColumn('time',Type.DATETIME)
+
+    return tableDef
+
+# Insert a few rows of data.
+def insertData(table):
+    tableDef = table.getTableDefinition()
+    
+    row = Row(tableDef) 
+    #print(("sel cast(cal_Dt as varchar(10)),wkday_long_nm from ww_gec_vm.cal_dt where cal_dt between "+"'"+dt1+"'"+" and "+"'"+dt2+"'"));
+    for i in session.execute("sel cast(cast(cal_dt as date FORMAT 'YYYY-MM-DD') as varchar(10)),wkday_long_nm,'2017-09-30-10-10-10-0000',current_date,current_timestamp(0) from ww_gec_vm.cal_dt where cal_dt between "+"'"+dt1+"'"+" and "+"'"+dt2+"'"):
+        print(i)
+        print(int(i[2].split('-')[0])+int(i[2].split('-')[1])+int(i[2].split('-')[2])+int(i[2].split('-')[3])+int(i[2].split('-')[4])+int(i[2].split('-')[5]))
+        row.setDate(0, int(i[0].split('-')[0]),int(i[0].split('-')[1]),int(i[0].split('-')[2]))
+        row.setCharString(1, i[1])
+        row.setDateTime(2, int(i[2].split('-')[0]),int(i[2].split('-')[1]),int(i[2].split('-')[2]),int(i[2].split('-')[3]),int(i[2].split('-')[4]),int(i[2].split('-')[5]),0)
+        
+        table.insert(row)
+
+#readFile.write("3");
+
+udaExec = teradata.UdaExec (appName="Tableau", version="1.0",logConsole=False);
+ 
+session = udaExec.connect(method="odbc", system="",username="", password="",Authentication="");
+
+#readFile.write("5");
+        
+try:
+    # Initialize Tableau Extract API
+    ExtractAPI.initialize()
+
+    with Extract('/Library/WebServer/Documents/Tableau/date1.tde') as extract:
+
+        table = None
+        if not extract.hasTable('Extract'):
+            # Table does not exist; create it
+            tableDef = makeTableDefinition()
+            table = extract.addTable('Extract', tableDef)
+        else:
+            # Open an existing table to add more rows
+            table = extract.openTable('Extract')
+
+        tableDef = table.getTableDefinition()
+        #printTableDefinition(tableDef)
+
+        insertData(table)
+
+        extract.close()
+
+    # Clean up Tableau Extract API
+    ExtractAPI.cleanup()
+
+except TableauException, e:
+    print 'Something bad happened:', e
+
+try:
+    # Initialize Tableau Server API
+    ServerAPI.initialize()
+
+    # Create the server connection object
+    serverConnection = ServerConnection()
+
+    # Connect to the server
+    serverConnection.connect('https://', '', '', '');
+
+    # Publish order-py.tde to the server under the default project with name Order-py
+    #serverConnection.publishExtract('order2-py.tde', 'default', 'Order2-py', False);
+    serverConnection.publishExtract('/Library/WebServer/Documents/Tableau/date1.tde', 'US-WMT KPI (GIS)', 'Date-Tableau TDE POC', True);
+
+    # Disconnect from the server
+    serverConnection.disconnect();
+
+    # Destroy the server connection object
+    serverConnection.close();
+
+    # Clean up Tableau Server API
+    ServerAPI.cleanup();
+
+except TableauException, e:
+    # Handle the exception depending on the type of exception received
+
+    errorMessage = "Error: "
+
+    if e.errorCode == Result.INTERNAL_ERROR:
+        errorMessage += "INTERNAL_ERROR - Could not parse the response from the server."
+
+    elif e.errorCode == Result.INVALID_ARGUMENT:
+        errorMessage += "INVALID_ARGUMENT - " + e.message
+
+    elif e.errorCode == Result.CURL_ERROR:
+        errorMessage += "CURL_ERROR - " + e.message
+
+    elif e.errorCode == Result.SERVER_ERROR:
+        errorMessage += "SERVER_ERROR - " + e.message
+
+    elif e.errorCode == Result.NOT_AUTHENTICATED:
+        errorMessage += "NOT_AUTHENTICATED - " + e.message
+
+    elif e.errorCode == Result.BAD_PAYLOAD:
+        errorMessage += "BAD_PAYLOAD - Unknown response from the server. Make sure this version of Tableau API is compatible with your server."
+
+    elif e.errorCode == Result.INIT_ERROR:
+        errorMessage += "INIT_ERROR - " + e.message
+
+    else:
+        errorMessage += "An unknown error occured."
+
+    print errorMessage
+
